@@ -1,0 +1,9 @@
+.cache
+build
+coverage
+dist
+elm-stuff
+node_modules
+elm-watch-*.txt
+lock
+elm.cmd
