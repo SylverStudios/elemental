@@ -11,6 +11,7 @@ import Dict.Any exposing (AnyDict)
 import Html exposing (Html, br, button, div, h2, p, span, text)
 import Html.Attributes exposing (id, style)
 import Html.Events exposing (onClick)
+import List exposing (length)
 import List.Extra
 
 
@@ -27,7 +28,38 @@ main =
 
 
 type Model
-    = Model { selected : List Element }
+    = Model
+        { selected : List Element
+        , hand : List SelectableElement
+        , view : View
+        , lastCast : Maybe (List Element)
+        , castHistory : List Resolution
+        }
+
+
+type Resolution
+    = Resolution
+        { elements : List Element
+        , results : List Instance
+        }
+
+
+type Instance
+    = Instance
+        { elements : List Element
+        , spell : Spell
+        , damage : Int
+        , effects : List String
+        }
+
+
+type View
+    = Discover
+    | Play
+
+
+type SelectableElement
+    = SelectableElement Element Bool
 
 
 type Element
@@ -45,6 +77,77 @@ type Spell
     | Lava
     | Mud
     | Fizzle
+
+
+init : Model
+init =
+    Model
+        { selected = []
+        , hand = []
+        , view = Discover
+        , lastCast = Nothing
+        , castHistory = []
+        }
+
+
+
+-- UPDATE
+
+
+type Msg
+    = Add Element
+    | Backspace
+    | Remove Int
+    | Draw
+    | ToggleElement Int
+    | ToggleView
+    | Cast
+
+
+update : Msg -> Model -> Model
+update msg (Model model) =
+    case msg of
+        Add element ->
+            Model { model | selected = element :: model.selected }
+
+        Backspace ->
+            Model { model | selected = model.selected |> List.tail |> Maybe.withDefault [] }
+
+        Remove index ->
+            Model { model | selected = List.Extra.removeAt index model.selected }
+
+        Draw ->
+            Model { model | hand = List.append model.hand [ SelectableElement Fire False, SelectableElement Water False, SelectableElement Earth False ] }
+
+        ToggleElement index ->
+            let
+                newHand =
+                    List.Extra.updateAt index (\(SelectableElement element selected) -> SelectableElement element (not selected)) model.hand
+            in
+            Model { model | hand = newHand }
+
+        ToggleView ->
+            case model.view of
+                Discover ->
+                    Model { model | view = Play }
+
+                Play ->
+                    Model { model | view = Discover }
+
+        Cast ->
+            let
+                ( selectedElements, unselectedElements ) =
+                    List.partition (\(SelectableElement _ s) -> s) model.hand
+
+                resolution =
+                    resolveElements (List.map (\(SelectableElement element _) -> element) selectedElements)
+            in
+            Model
+                { model
+                    | hand = unselectedElements
+                    , lastCast = Just (List.map (\(SelectableElement element _) -> element) selectedElements)
+                    , castHistory = resolution :: model.castHistory
+                }
 
 
 displaySpellbook : List (Html Msg)
@@ -112,40 +215,61 @@ spellbook =
         |> Dict.Any.insert [ Earth, Earth ] EarthSpike
 
 
-init : Model
-init =
-    Model { selected = [] }
-
-
-
--- UPDATE
-
-
-type Msg
-    = Add Element
-    | Backspace
-    | Remove Int
-
-
-update : Msg -> Model -> Model
-update msg (Model model) =
-    case msg of
-        Add element ->
-            Model { model | selected = element :: model.selected }
-
-        Backspace ->
-            Model { model | selected = model.selected |> List.tail |> Maybe.withDefault [] }
-
-        Remove index ->
-            Model { model | selected = List.Extra.removeAt index model.selected }
-
-
 
 -- VIEW
 
 
 view : Model -> Html Msg
 view (Model model) =
+    case model.view of
+        Discover ->
+            div [ style "background-color" "#f28d85", style "border-radius" "5px" ] [ button [ onClick ToggleView ] [ text "Toggle" ], viewDiscover model.selected ]
+
+        Play ->
+            div [ style "background-color" "#bff2aa", style "border-radius" "5px" ] [ button [ onClick ToggleView ] [ text "Toggle" ], viewPlay model.hand model.castHistory ]
+
+
+viewPlay : List SelectableElement -> List Resolution -> Html Msg
+viewPlay hand castHistory =
+    div []
+        [ div [ style "display" "flex", style "justify-content" "space-between" ]
+            [ div []
+                [ text <| String.fromInt <| length <| hand
+                , button [ onClick Draw ] [ text "Draw" ]
+                ]
+            , div [ id "hand", style "display" "flex" ]
+                [ h2 [] [ text "Hand" ]
+                , div [ style "display" "flex", style "flex-direction" "row" ] (List.indexedMap (\index se -> viewSelectableElement (ToggleElement index) se) hand)
+                ]
+            , div [ id "on-deck", style "display" "flex" ]
+                [ h2 [] [ text "On Deck" ]
+                , div [ style "display" "flex", style "flex-direction" "row" ]
+                    (parseAsGrouping (hand |> List.filter (\(SelectableElement _ s) -> s) |> List.map (\(SelectableElement element _) -> element)))
+                ]
+            ]
+        , div [ style "display" "flex" ]
+            [ h2 [] [ text "Resolution" ]
+            , text "tmp"
+            , button [ onClick Cast ] [ text "Cast" ]
+            ]
+        , div [ id "history" ]
+            [ h2 [] [ text "History" ]
+            , div [ style "display" "flex" ]
+                [ div []
+                    [ text "Turns: "
+                    , text <| String.fromInt <| length castHistory
+                    , br [] []
+                    , text "Damage: "
+                    , text <| String.fromInt <| List.foldl (\(Resolution data) acc -> List.foldl (\(Instance instance) iAcc -> iAcc + instance.damage) acc data.results) 0 castHistory
+                    ]
+                , div [] (List.map viewResolution castHistory)
+                ]
+            ]
+        ]
+
+
+viewDiscover : List Element -> Html Msg
+viewDiscover selected =
     div [ style "display" "flex", style "align-content" "flex-start" ]
         [ div [ id "spellbook" ]
             [ h2 [] [ text "Spellbook" ]
@@ -161,25 +285,14 @@ view (Model model) =
             , br [] []
             , text "Selected"
             , div [] [ button [ onClick Backspace ] [ text "Backspace" ] ]
-            , div [] (List.indexedMap (\index e -> dot (Remove index) e) model.selected)
+            , div [] (List.indexedMap (\index e -> dot (Remove index) e) selected)
             , div [ id "results" ]
                 [ h2 [] [ text "Results" ]
-                , div [ style "display" "flex" ] (parseAsGrouping model.selected)
+                , div [ style "display" "flex" ] (parseAsGrouping selected)
                 , br [] []
                 ]
             ]
         ]
-
-
-parseSpell : List Element -> Html Msg
-parseSpell elements =
-    p [] <|
-        List.foldl
-            (\a b ->
-                text (elementToString a) :: b
-            )
-            []
-            elements
 
 
 displayGrouping : String -> List Element -> Html Msg
@@ -189,6 +302,65 @@ displayGrouping name elements =
         , br [] []
         , span [] <| List.indexedMap (\index e -> dot (Remove index) e) elements
         ]
+
+
+resolveElements : List Element -> Resolution
+resolveElements elements =
+    Resolution { elements = elements, results = foldElements elements }
+
+
+{-| I can only handle 2 element combos currently
+-}
+foldElements : List Element -> List Instance
+foldElements elements =
+    case elements of
+        a :: b :: rest ->
+            case castSpell [ a, b ] of
+                Just spell ->
+                    Instance
+                        { elements = [ a, b ]
+                        , spell = spell
+                        , damage = damage spell
+                        , effects = effects spell
+                        }
+                        :: foldElements rest
+
+                Nothing ->
+                    let
+                        spell : Spell
+                        spell =
+                            castSpell [ a ] |> Maybe.withDefault Fizzle
+                    in
+                    Instance
+                        { elements = [ a ]
+                        , spell = spell
+                        , damage = damage spell
+                        , effects = effects spell
+                        }
+                        :: foldElements (b :: rest)
+
+        [ e ] ->
+            case castSpell [ e ] of
+                Just spell ->
+                    [ Instance
+                        { elements = [ e ]
+                        , spell = spell
+                        , damage = damage spell
+                        , effects = effects spell
+                        }
+                    ]
+
+                Nothing ->
+                    [ Instance
+                        { elements = [ e ]
+                        , spell = Fizzle
+                        , damage = damage Fizzle
+                        , effects = effects Fizzle
+                        }
+                    ]
+
+        [] ->
+            []
 
 
 parseAsGrouping : List Element -> List (Html Msg)
@@ -242,6 +414,20 @@ doubleParseSpell elements =
             ""
 
 
+viewResolution : Resolution -> Html Msg
+viewResolution (Resolution data) =
+    let
+        viewInstance : Instance -> Html Msg
+        viewInstance (Instance instance) =
+            div [ style "display" "flex" ]
+                [ displayGrouping (spellToSting instance.spell) instance.elements
+                , div [] [ text "Damage: ", text (String.fromInt instance.damage) ]
+                , div [] (text " Effects: " :: List.map (\e -> text e) instance.effects)
+                ]
+    in
+    div [] (List.map viewInstance data.results)
+
+
 elementToString : Element -> String
 elementToString element =
     case element of
@@ -286,52 +472,119 @@ doubleSpell element1 element2 =
             Nothing
 
 
+damage : Spell -> Int
+damage spell =
+    case spell of
+        Ember ->
+            1
+
+        Fireball ->
+            3
+
+        WaterJet ->
+            2
+
+        EarthSpike ->
+            2
+
+        Steam ->
+            2
+
+        Lava ->
+            4
+
+        Mud ->
+            3
+
+        Fizzle ->
+            0
+
+
+effects : Spell -> List String
+effects spell =
+    case spell of
+        Ember ->
+            [ "Burn" ]
+
+        Fireball ->
+            [ "Burn" ]
+
+        WaterJet ->
+            [ "Wet" ]
+
+        EarthSpike ->
+            [ "Pierce" ]
+
+        Steam ->
+            [ "Wet", "Burn" ]
+
+        Lava ->
+            [ "Burn", "Pierce" ]
+
+        Mud ->
+            [ "Wet", "Pierce" ]
+
+        Fizzle ->
+            []
+
+
 dot : Msg -> Element -> Html Msg
 dot msg element =
-    let
-        color : String
-        color =
-            case element of
-                Fire ->
-                    "red"
-
-                Water ->
-                    "blue"
-
-                Earth ->
-                    "brown"
-    in
     button
         [ onClick msg
         , style "height" "25px"
         , style "width" "25px"
-        , style "background-color" color
+        , style "background-color" (elementColor element)
         , style "border-radius" "50%"
         , style "display" "inline-block"
         ]
         []
+
+
+elementColor : Element -> String
+elementColor element =
+    case element of
+        Fire ->
+            "red"
+
+        Water ->
+            "blue"
+
+        Earth ->
+            "brown"
 
 
 simpleDot : Element -> Html Msg
 simpleDot element =
-    let
-        color : String
-        color =
-            case element of
-                Fire ->
-                    "red"
-
-                Water ->
-                    "blue"
-
-                Earth ->
-                    "brown"
-    in
     button
         [ style "height" "25px"
         , style "width" "25px"
-        , style "background-color" color
+        , style "background-color" (elementColor element)
         , style "border-radius" "50%"
         , style "display" "inline-block"
         ]
         []
+
+
+viewSelectableElement : Msg -> SelectableElement -> Html Msg
+viewSelectableElement msg (SelectableElement element selected) =
+    let
+        selectedStyle =
+            if selected then
+                style "align-self" "flex-start"
+
+            else
+                style "align-self" "center"
+    in
+    div [ style "display" "flex" ]
+        [ button
+            [ onClick msg
+            , style "height" "25px"
+            , style "width" "25px"
+            , style "background-color" (elementColor element)
+            , style "border-radius" "50%"
+            , style "display" "inline-block"
+            , selectedStyle
+            ]
+            []
+        ]
