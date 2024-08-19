@@ -46,16 +46,17 @@ type Game
 type Resolution
     = Resolution
         { elements : List Element
-        , results : List Instance
+        , results : List SpellConfiguration
         }
 
 
-type Instance
-    = Instance
+type SpellConfiguration
+    = SpellConfiguration
         { elements : List Element
         , spell : Spell
-        , damage : Int
+        , life : Int
         , effects : List String
+        , name : String
         }
 
 
@@ -73,17 +74,18 @@ type Element
     = Fire
     | Water
     | Earth
+    | Wind
 
 
 type Spell
-    = Fireball
-    | Ember
-    | WaterJet
-    | EarthSpike
-    | Steam
-    | Lava
-    | Mud
-    | Fizzle
+    = Sprout
+    | Growth
+    | Burn
+    | Wildfire
+    | Rain
+    | Pour
+    | Storm
+    | Twister
 
 
 init : Model
@@ -163,7 +165,7 @@ update msg (Model model) =
                 }
 
         Play ->
-            Model { model | view = Game (Selection [ SelectableElement Fire False, SelectableElement Water False, SelectableElement Earth False ] 10 10 []) }
+            Model { model | view = Game (Selection [ SelectableElement Fire False, SelectableElement Water False, SelectableElement Earth False, SelectableElement Wind False ] 10 10 []) }
 
         GameCast ->
             let
@@ -186,7 +188,7 @@ update msg (Model model) =
                                             resolveElements (List.map (\(SelectableElement element _) -> element) selectedElements)
 
                                         damage =
-                                            List.foldl (\(Resolution data) acc -> List.foldl (\(Instance instance) iAcc -> iAcc + instance.damage) acc data.results) 0 castHistory
+                                            List.foldl (\(Resolution data) acc -> List.foldl (\(SpellConfiguration instance) iAcc -> iAcc + instance.life) acc data.results) 0 castHistory
                                     in
                                     if enemy - damage <= 0 then
                                         Done (resolution :: castHistory)
@@ -237,44 +239,134 @@ addDraw hand =
     List.append hand [ SelectableElement Fire False, SelectableElement Water False, SelectableElement Earth False ]
 
 
-displaySpellbook : List (Html Msg)
+displaySpellbook : Html Msg
 displaySpellbook =
-    spellbook
-        |> Dict.Any.toList
-        |> List.map (\( elementList, spell ) -> displayGrouping (spellToSting spell) elementList)
+    div
+        [ style "height" "300px"
+        , style "overflow-y" "auto"
+        , style "border" "1px solid #ccc"
+        , style "border-radius" "4px"
+        , style "padding" "10px"
+        ]
+        [ div [ style "font-weight" "bold", style "margin-bottom" "10px" ] [ text "Spellbook" ]
+        , div [ style "display" "flex", style "flex-direction" "column", style "gap" "5px" ]
+            (spellbook
+                |> Dict.Any.toList
+                |> List.map (\( _, spell ) -> displayGrouping (spellConfiguration spell))
+            )
+        ]
 
 
 spellToSting : Spell -> String
-spellToSting spell =
+spellToSting =
+    let
+        fx (SpellConfiguration { name }) =
+            name
+    in
+    spellConfiguration >> fx
+
+
+spellLife : Spell -> Int
+spellLife =
+    let
+        fx (SpellConfiguration { life }) =
+            life
+    in
+    spellConfiguration >> fx
+
+
+spellEffects : Spell -> List String
+spellEffects =
+    let
+        fx (SpellConfiguration { effects }) =
+            effects
+    in
+    spellConfiguration >> fx
+
+
+spellConfiguration : Spell -> SpellConfiguration
+spellConfiguration spell =
     case spell of
-        Ember ->
-            "Ember"
+        Sprout ->
+            SpellConfiguration
+                { elements = [ Earth ]
+                , spell = Sprout
+                , life = 1
+                , effects = [ "+1 Earth" ]
+                , name = "Sprout"
+                }
 
-        Fireball ->
-            "Fireball"
+        Growth ->
+            SpellConfiguration
+                { elements = [ Earth, Earth ]
+                , spell = Growth
+                , life = 2
+                , effects = [ "+1 Earth", "+1 Regen" ]
+                , name = "Growth"
+                }
 
-        WaterJet ->
-            "WaterJet"
+        Burn ->
+            SpellConfiguration
+                { elements = [ Fire ]
+                , spell = Burn
+                , life = -1
+                , effects = [ "+1 Fire" ]
+                , name = "Burn"
+                }
 
-        EarthSpike ->
-            "EarthSpike"
+        Wildfire ->
+            SpellConfiguration
+                { elements = [ Fire, Fire ]
+                , spell = Wildfire
+                , life = -1
+                , effects = [ "+1 Burn", "+1 Fire" ]
+                , name = "Wildfire"
+                }
 
-        Steam ->
-            "Steam"
+        Rain ->
+            SpellConfiguration
+                { elements = [ Water ]
+                , spell = Rain
+                , life = 0
+                , effects = [ "+1 Regen", "Cleanse", "+1 Water" ]
+                , name = "Rain"
+                }
 
-        Lava ->
-            "Lava"
+        Pour ->
+            SpellConfiguration
+                { elements = [ Water, Water ]
+                , spell = Pour
+                , life = 0
+                , effects = [ "+1 Regen", "Cleanse", "+1 Water", "+1 Storm" ]
+                , name = "Pour"
+                }
 
-        Mud ->
-            "Mud"
+        Storm ->
+            SpellConfiguration
+                { elements = [ Wind ]
+                , spell = Storm
+                , life = 0
+                , effects = [ "+1 Storm", "+1 Wind" ]
+                , name = "Storm"
+                }
 
-        Fizzle ->
-            "Fizzle"
+        Twister ->
+            SpellConfiguration
+                { elements = [ Wind, Wind ]
+                , spell = Twister
+                , life = -1
+                , effects = [ "+2 Storm", "+1 Wind" ]
+                , name = "Twister"
+                }
 
 
 spellbook : AnyDict (List Int) (List Element) Spell
 spellbook =
     let
+        spells : List Spell
+        spells =
+            [ Sprout, Growth, Burn, Wildfire, Rain, Pour, Storm, Twister ]
+
         elementToInt element =
             case element of
                 Fire ->
@@ -286,20 +378,16 @@ spellbook =
                 Earth ->
                     2
 
+                Wind ->
+                    3
+
         elementsToInt listOfElements =
             List.map elementToInt listOfElements
+
+        spellConfigToComparable (SpellConfiguration record) =
+            { elements = record.elements, spell = record.spell }
     in
-    Dict.Any.empty elementsToInt
-        |> Dict.Any.insert [ Fire ] Ember
-        |> Dict.Any.insert [ Fire, Fire ] Fireball
-        |> Dict.Any.insert [ Fire, Water ] Steam
-        |> Dict.Any.insert [ Fire, Earth ] Lava
-        |> Dict.Any.insert [ Water, Fire ] Steam
-        |> Dict.Any.insert [ Water, Water ] WaterJet
-        |> Dict.Any.insert [ Water, Earth ] Mud
-        |> Dict.Any.insert [ Earth, Fire ] Lava
-        |> Dict.Any.insert [ Earth, Water ] Mud
-        |> Dict.Any.insert [ Earth, Earth ] EarthSpike
+    List.foldl (\spell acc -> Dict.Any.insert spell.elements spell.spell acc) (Dict.Any.empty elementsToInt) (spells |> List.map spellConfiguration |> List.map spellConfigToComparable)
 
 
 
@@ -349,14 +437,15 @@ viewSelect : List SelectableElement -> Int -> Int -> List Resolution -> Html Msg
 viewSelect hand player enemy castHistory =
     div []
         [ viewGameStats player enemy castHistory
-        , div [ style "display" "flex", style "justify-content" "space-between" ]
-            [ div [ id "hand", style "display" "flex" ]
+        , div [ style "display" "flex", style "width" "100%" ]
+            [ div [ id "hand", style "display" "flex", style "flex-direction" "column", style "width" "50%", style "align-items" "center" ]
                 [ h2 [] [ text "Hand" ]
-                , div [ style "display" "flex", style "flex-direction" "row" ] (List.indexedMap (\index se -> viewSelectableElement (GameToggleElement index) se) hand)
+                , div [ style "display" "flex", style "flex-direction" "row", style "align-items" "flex-end", style "height" "50px" ]
+                    (List.indexedMap (\index se -> viewSelectableElement (GameToggleElement index) se) hand)
                 ]
-            , div [ id "on-deck", style "display" "flex" ]
+            , div [ id "on-deck", style "display" "flex", style "flex-direction" "column", style "width" "50%", style "align-items" "center" ]
                 [ h2 [] [ text "On Deck" ]
-                , div [ style "display" "flex", style "flex-direction" "row" ]
+                , div [ style "display" "flex", style "flex-direction" "row", style "justify-content" "center" ]
                     (parseAsGrouping (hand |> List.filter (\(SelectableElement _ s) -> s) |> List.map (\(SelectableElement element _) -> element)))
                 ]
             ]
@@ -383,7 +472,7 @@ viewDemo hand castHistory =
                 , button [ onClick Draw ] [ text "Draw" ]
                 ]
             , div [ id "hand", style "display" "flex" ]
-                [ h2 [] [ text "Hand" ]
+                [ h2 [] [ text "Hand now" ]
                 , div [ style "display" "flex", style "flex-direction" "row" ] (List.indexedMap (\index se -> viewSelectableElement (ToggleElement index) se) hand)
                 ]
             , div [ id "on-deck", style "display" "flex" ]
@@ -404,8 +493,8 @@ viewDemo hand castHistory =
                     [ text "Turns: "
                     , text <| String.fromInt <| length castHistory
                     , br [] []
-                    , text "Damage: "
-                    , text <| String.fromInt <| List.foldl (\(Resolution data) acc -> List.foldl (\(Instance instance) iAcc -> iAcc + instance.damage) acc data.results) 0 castHistory
+                    , text "Life: "
+                    , text <| String.fromInt <| List.foldl (\(Resolution data) acc -> List.foldl (\(SpellConfiguration instance) iAcc -> iAcc + instance.life) acc data.results) 0 castHistory
                     ]
                 , div [] (List.map viewResolution castHistory)
                 ]
@@ -420,7 +509,7 @@ viewGameStats player enemy castHistory =
             length castHistory
 
         damage =
-            List.foldl (\(Resolution data) acc -> List.foldl (\(Instance instance) iAcc -> iAcc + instance.damage) acc data.results) 0 castHistory
+            List.foldl (\(Resolution data) acc -> List.foldl (\(SpellConfiguration instance) iAcc -> iAcc + instance.life) acc data.results) 0 castHistory
     in
     div [ id "game-info", style "display" "flex", style "justify-content" "space-between", style "flex-direction" "row" ]
         [ h2 [] [ text "Game Deets" ]
@@ -436,7 +525,7 @@ viewDiscover selected =
     div [ style "display" "flex", style "align-content" "flex-start" ]
         [ div [ id "spellbook" ]
             [ h2 [] [ text "Spellbook" ]
-            , div [ style "display" "flex", style "flex-direction" "column" ] displaySpellbook
+            , div [ style "display" "flex", style "flex-direction" "column" ] [ displaySpellbook ]
             ]
         , div [ id "selection", style "flex-grow" "2", style "margin-left" "10%" ]
             [ h2 [] [ text "Add" ]
@@ -444,6 +533,7 @@ viewDiscover selected =
                 [ dot (Add Earth) Earth
                 , dot (Add Fire) Fire
                 , dot (Add Water) Water
+                , dot (Add Wind) Wind
                 ]
             , br [] []
             , text "Selected"
@@ -458,8 +548,8 @@ viewDiscover selected =
         ]
 
 
-displayGrouping : String -> List Element -> Html Msg
-displayGrouping name elements =
+displayGrouping : SpellConfiguration -> Html Msg
+displayGrouping (SpellConfiguration { name, elements }) =
     div [ style "background-color" "#CBC3E3", style "margin" "5px", style "border-radius" "5px", style "padding" "5px" ]
         [ span [ style "text-align" "center" ] [ text name ]
         , br [] []
@@ -472,87 +562,26 @@ resolveElements elements =
     Resolution { elements = elements, results = foldElements elements }
 
 
-{-| I can only handle 2 element combos currently
+{-| Find an entry in the spellbook, or treat each element individually
 -}
-foldElements : List Element -> List Instance
+foldElements : List Element -> List SpellConfiguration
 foldElements elements =
-    case elements of
-        a :: b :: rest ->
-            case castSpell [ a, b ] of
-                Just spell ->
-                    Instance
-                        { elements = [ a, b ]
-                        , spell = spell
-                        , damage = spellDamage spell
-                        , effects = effects spell
-                        }
-                        :: foldElements rest
+    case castSpell elements of
+        Just spell ->
+            [ spellConfiguration spell ]
 
-                Nothing ->
-                    let
-                        spell : Spell
-                        spell =
-                            castSpell [ a ] |> Maybe.withDefault Fizzle
-                    in
-                    Instance
-                        { elements = [ a ]
-                        , spell = spell
-                        , damage = spellDamage spell
-                        , effects = effects spell
-                        }
-                        :: foldElements (b :: rest)
-
-        [ e ] ->
-            case castSpell [ e ] of
-                Just spell ->
-                    [ Instance
-                        { elements = [ e ]
-                        , spell = spell
-                        , damage = spellDamage spell
-                        , effects = effects spell
-                        }
-                    ]
-
-                Nothing ->
-                    [ Instance
-                        { elements = [ e ]
-                        , spell = Fizzle
-                        , damage = spellDamage Fizzle
-                        , effects = effects Fizzle
-                        }
-                    ]
-
-        [] ->
-            []
+        Nothing ->
+            elements
+                |> List.map (\e -> castSpell [ e ])
+                |> List.filterMap identity
+                |> List.map spellConfiguration
 
 
 parseAsGrouping : List Element -> List (Html Msg)
 parseAsGrouping elements =
-    case elements of
-        a :: b :: rest ->
-            case castSpell [ a, b ] of
-                Just spell ->
-                    displayGrouping (spellToSting spell) [ a, b ] :: parseAsGrouping rest
-
-                Nothing ->
-                    let
-                        singleCast =
-                            castSpell [ a ]
-                                |> Maybe.map (\spell -> displayGrouping (spellToSting spell) [ a ])
-                                |> Maybe.withDefault (displayGrouping (spellToSting Fizzle) [ a ])
-                    in
-                    singleCast :: parseAsGrouping (b :: rest)
-
-        [ e ] ->
-            case castSpell [ e ] of
-                Just spell ->
-                    [ displayGrouping (spellToSting spell) [ e ] ]
-
-                Nothing ->
-                    [ displayGrouping (spellToSting Fizzle) [ e ] ]
-
-        [] ->
-            [ text "" ]
+    elements
+        |> foldElements
+        |> List.map displayGrouping
 
 
 castSpell : List Element -> Maybe Spell
@@ -560,35 +589,18 @@ castSpell elements =
     Dict.Any.get elements spellbook
 
 
-doubleParseSpell elements =
-    case elements of
-        a :: b :: rest ->
-            case doubleSpell a b of
-                Just spellName ->
-                    spellName ++ doubleParseSpell rest
-
-                Nothing ->
-                    elementToString a ++ doubleParseSpell (b :: rest)
-
-        [ e ] ->
-            elementToString e
-
-        [] ->
-            ""
-
-
 viewResolution : Resolution -> Html Msg
 viewResolution (Resolution data) =
     let
-        viewInstance : Instance -> Html Msg
-        viewInstance (Instance instance) =
+        viewSpellConfiguration : SpellConfiguration -> Html Msg
+        viewSpellConfiguration (SpellConfiguration instance) =
             div [ style "display" "flex" ]
-                [ displayGrouping (spellToSting instance.spell) instance.elements
-                , div [] [ text "Damage: ", text (String.fromInt instance.damage) ]
+                [ displayGrouping (SpellConfiguration instance)
+                , div [] [ text "Damage: ", text (String.fromInt instance.life) ]
                 , div [] (text " Effects: " :: List.map (\e -> text e) instance.effects)
                 ]
     in
-    div [] (List.map viewInstance data.results)
+    div [] (List.map viewSpellConfiguration data.results)
 
 
 elementToString : Element -> String
@@ -603,92 +615,8 @@ elementToString element =
         Earth ->
             "Earth"
 
-
-doubleSpell : Element -> Element -> Maybe String
-doubleSpell element1 element2 =
-    case ( element1, element2 ) of
-        ( Fire, Water ) ->
-            Just "Steam"
-
-        ( Water, Fire ) ->
-            Just "Steam"
-
-        ( Fire, Earth ) ->
-            Just "Lava"
-
-        ( Earth, Fire ) ->
-            Just "Lava"
-
-        ( Water, Earth ) ->
-            Just "Mud"
-
-        ( Earth, Water ) ->
-            Just "Mud"
-
-        ( Fire, Fire ) ->
-            Nothing
-
-        ( Water, Water ) ->
-            Nothing
-
-        ( Earth, Earth ) ->
-            Nothing
-
-
-spellDamage : Spell -> Int
-spellDamage spell =
-    case spell of
-        Ember ->
-            1
-
-        Fireball ->
-            3
-
-        WaterJet ->
-            2
-
-        EarthSpike ->
-            2
-
-        Steam ->
-            2
-
-        Lava ->
-            4
-
-        Mud ->
-            3
-
-        Fizzle ->
-            0
-
-
-effects : Spell -> List String
-effects spell =
-    case spell of
-        Ember ->
-            [ "Burn" ]
-
-        Fireball ->
-            [ "Burn" ]
-
-        WaterJet ->
-            [ "Wet" ]
-
-        EarthSpike ->
-            [ "Pierce" ]
-
-        Steam ->
-            [ "Wet", "Burn" ]
-
-        Lava ->
-            [ "Burn", "Pierce" ]
-
-        Mud ->
-            [ "Wet", "Pierce" ]
-
-        Fizzle ->
-            []
+        Wind ->
+            "Wind"
 
 
 dot : Msg -> Element -> Html Msg
@@ -714,7 +642,10 @@ elementColor element =
             "blue"
 
         Earth ->
-            "brown"
+            "green"
+
+        Wind ->
+            "grey"
 
 
 simpleDot : Element -> Html Msg

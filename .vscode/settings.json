@@ -1,0 +1,24 @@
+{
+    "launch": {
+        "configurations": [
+            {
+                "type": "node",
+                "request": "launch",
+                "name": "Launch Program",
+                "program": "${file}",
+                "args": [],
+                "osx": {
+                    "runtimeExecutable": "mise"
+                },
+                "linux": {
+                    "runtimeExecutable": "mise"
+                },
+                "runtimeArgs": [
+                    "x",
+                    "--",
+                    "node"
+                ]
+            }
+        ]
+    }
+}
